@@ -11,7 +11,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
-from core.config import COINS_TO_MONITOR
+from core.config import COINS_TO_MONITOR, BINANCE_CONFIG, USE_TESTNET
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,37 +38,58 @@ class CoinAnalysis:
             self.signals = []
 
 class SmartPairFinder:
-    def __init__(self, use_testnet: bool = False):
-        self.exchange = self.init_exchange(use_testnet)
-        self.btc_symbol = "BTC/USDT"
+    def __init__(self, use_testnet: bool = None):
+        # ⭐⭐ استخدام إعدادات النظام ⭐⭐
+        if use_testnet is None:
+            use_testnet = USE_TESTNET
+            
+        self.use_testnet = use_testnet
+        self.exchange = self.init_futures_exchange(use_testnet)
+        self.btc_symbol = "BTC/USDT:USDT"  # ⭐ إضافة :USDT للعقود الآجلة
         self.cache = {}
         
-    def init_exchange(self, use_testnet: bool):
-        """تهيئة اتصال Binance"""
-        from core.config import BINANCE_CONFIG
+        logger.info(f"✅ SmartPairFinder initialized (Testnet: {use_testnet})")
+    
+    def init_futures_exchange(self, use_testnet: bool):
+        """تهيئة اتصال Binance Futures"""
         
         config = {
             'enableRateLimit': True,
-            'options': {'defaultType': 'future'}  # ⭐ تغيير إلى 'future' للعقود الآجلة
+            'options': {
+                'defaultType': 'future',
+                'adjustForTimeDifference': True,
+                'defaultMarginMode': 'cross',
+            }
         }
         
-        # إضافة API keys إذا كانت موجودة
-        if BINANCE_CONFIG.get('api_key'):
-            config['apiKey'] = BINANCE_CONFIG['api_key']
-            config['secret'] = BINANCE_CONFIG['api_secret']
+        # ⭐⭐ إضافة مفاتيح API إذا كانت موجودة ⭐⭐
+        api_key = BINANCE_CONFIG.get('api_key', '')
+        api_secret = BINANCE_CONFIG.get('api_secret', '')
         
-        if use_testnet:
-            config.update({
-                'apiKey': 'YOUR_TESTNET_API_KEY',  # استبدل بمفاتيح Testnet
-                'secret': 'YOUR_TESTNET_SECRET',
-                'urls': {
-                    'api': {
-                        'public': 'https://testnet.binancefuture.com/fapi/v1',
-                        'private': 'https://testnet.binancefuture.com/fapi/v1'
-                    }
+        if api_key and api_secret:
+            config['apiKey'] = api_key
+            config['secret'] = api_secret
+        
+        # ⭐⭐ اختيار URLs بناءً على Testnet أو Production ⭐⭐
+        if use_testnet or not api_key or not api_secret:
+            # استخدام Testnet
+            config['urls'] = {
+                'api': {
+                    'public': 'https://testnet.binancefuture.com/fapi/v1',
+                    'private': 'https://testnet.binancefuture.com/fapi/v1',
                 }
-            })
-            
+            }
+            logger.info("📊 Using Binance Futures Testnet for data fetching")
+        else:
+            # استخدام Production
+            config['urls'] = {
+                'api': {
+                    'public': 'https://fapi.binance.com/fapi/v1',
+                    'private': 'https://fapi.binance.com/fapi/v1',
+                }
+            }
+            logger.info("📊 Using Binance Futures Production for data fetching")
+        
         return ccxt.binance(config)
     
     async def find_best_trading_pair(self) -> Optional[Dict]:
@@ -91,6 +112,10 @@ class SmartPairFinder:
             # تحليل جميع العملات
             coins_analysis = []
             for symbol in COINS_TO_MONITOR:
+                # تخطي BTC/USDT
+                if "BTC/USDT" in symbol:
+                    continue
+                    
                 coin_analysis = await self.analyze_coin(symbol, btc_data)
                 if coin_analysis and coin_analysis.score > 0:
                     coins_analysis.append(coin_analysis)
@@ -115,11 +140,12 @@ class SmartPairFinder:
             return None
     
     async def get_btc_analysis(self) -> Optional[pd.DataFrame]:
-        """جلب وتحليل بيانات BTC"""
+        """جلب وتحليل بيانات BTC للعقود الآجلة"""
         try:
+            # ⭐⭐ استخدام رمز BTC/USDT:USDT للعقود الآجلة ⭐⭐
             ohlcv = await asyncio.to_thread(
                 self.exchange.fetch_ohlcv,
-                self.btc_symbol,
+                "BTC/USDT:USDT",  # ⭐ رمز العقود الآجلة
                 timeframe='1h',
                 limit=100
             )
@@ -131,6 +157,7 @@ class SmartPairFinder:
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)
             
+            logger.info(f"✅ تم جلب بيانات BTC: {len(df)} شمعة، آخر سعر: ${df['close'].iloc[-1]:.2f}")
             return df
             
         except Exception as e:
@@ -138,9 +165,9 @@ class SmartPairFinder:
             return None
     
     async def analyze_coin(self, symbol: str, btc_data: pd.DataFrame) -> Optional[CoinAnalysis]:
-        """تحليل شامل لعملة معينة"""
+        """تحليل شامل لعملة معينة للعقود الآجلة"""
         try:
-            # تنظيف الرمز لإزالة :USDT إذا كان موجوداً
+            # تنظيف الرمز (إزالة :USDT إذا كان موجوداً)
             clean_symbol = symbol.replace(':USDT', '')
             
             # جلب بيانات OHLCV للعقود الآجلة
@@ -153,6 +180,7 @@ class SmartPairFinder:
             )
             
             if len(ohlcv) < 50:
+                logger.warning(f"بيانات غير كافية لـ {symbol}: {len(ohlcv)} شمعة")
                 return None
             
             df = pd.DataFrame(
@@ -165,13 +193,13 @@ class SmartPairFinder:
             # جلب بيانات التيكر
             ticker = await asyncio.to_thread(self.exchange.fetch_ticker, clean_symbol)
             
-            # جلب سعر BTC للعملة
-            symbol_btc = clean_symbol.replace('USDT', 'BTC')
+            # جلب سعر BTC للعملة (للمقارنة)
             try:
-                ticker_btc = await asyncio.to_thread(self.exchange.fetch_ticker, symbol_btc)
-                price_btc = ticker_btc['last']
+                # استخدم BTC/USDT كمرجع
+                btc_price = btc_data['close'].iloc[-1] if len(btc_data) > 0 else ticker['last'] / 0.000016  # تقدير
+                price_btc = ticker['last'] / btc_price
             except:
-                price_btc = ticker['last'] / (btc_data['close'].iloc[-1] if len(btc_data) > 0 else 1)
+                price_btc = 0.0
             
             # حساب الأداء مقابل BTC
             coin_returns = self.calculate_returns(df)
@@ -203,9 +231,8 @@ class SmartPairFinder:
             # اكتشاف الإشارات
             signals = self.detect_signals(df, vs_btc_4h, rsi, support, resistance, ticker['last'])
             
-            # ⭐⭐ **السطر المصحح - تأكد من أن كل الأقواس متطابقة** ⭐⭐
             return CoinAnalysis(
-                symbol=symbol,  # نستخدم الرمز الأصلي مع :USDT
+                symbol=symbol,
                 price=ticker['last'],
                 price_btc=price_btc,
                 vs_btc_1h=vs_btc_1h,
@@ -219,7 +246,6 @@ class SmartPairFinder:
                 support_level=support,
                 resistance_level=resistance
             )
-            # ⭐⭐ **لا يوجد قوس إضافي هنا** ⭐⭐
             
         except Exception as e:
             logger.error(f"خطأ في تحليل {symbol}: {e}")
@@ -227,7 +253,7 @@ class SmartPairFinder:
     
     def calculate_returns(self, df: pd.DataFrame) -> Dict[str, float]:
         """حساب العوائد على أطر زمنية مختلفة"""
-        if len(df) < 24:
+        if df is None or len(df) < 24:
             return {'1h': 0, '4h': 0, '1d': 0}
         
         close = df['close']
@@ -257,21 +283,24 @@ class SmartPairFinder:
     
     def calculate_rsi(self, prices: pd.Series, period: int = 14) -> float:
         """حساب مؤشر RSI"""
-        if len(prices) < period + 1:
+        if prices is None or len(prices) < period + 1:
             return 50.0
         
         delta = prices.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
         
-        rs = gain.iloc[-1] / loss.iloc[-1] if loss.iloc[-1] != 0 else 0
+        if loss.iloc[-1] == 0:
+            return 100.0
+            
+        rs = gain.iloc[-1] / loss.iloc[-1]
         rsi = 100 - (100 / (1 + rs))
         
-        return rsi
+        return min(max(rsi, 0), 100)  # تحديد بين 0 و 100
     
     def calculate_atr(self, df: pd.DataFrame, period: int = 14) -> float:
         """حساب Average True Range"""
-        if len(df) < period:
+        if df is None or len(df) < period:
             return 0.0
         
         high = df['high']
@@ -285,11 +314,11 @@ class SmartPairFinder:
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         atr = tr.rolling(window=period).mean()
         
-        return atr.iloc[-1]
+        return atr.iloc[-1] if not atr.empty else 0.0
     
     def calculate_support_resistance(self, df: pd.DataFrame) -> Tuple[float, float]:
         """حساب مستويات الدعم والمقاومة"""
-        if len(df) < 20:
+        if df is None or len(df) < 20:
             return 0.0, 0.0
         
         # استخدام طريقة بسيطة: أعلى وأدنى 20 شمعة
@@ -319,7 +348,7 @@ class SmartPairFinder:
         score += rsi_score
         
         # السيولة (20%)
-        volume = metrics['volume']
+        volume = metrics.get('volume', 0)
         if volume > 10000000:  # 10 مليون دولار
             volume_score = 20
         elif volume > 1000000:  # 1 مليون دولار
@@ -331,7 +360,7 @@ class SmartPairFinder:
         score += volume_score
         
         # التقلب (15%)
-        atr = metrics['atr_percent']
+        atr = metrics.get('atr_percent', 0)
         if 1.0 <= atr <= 3.0:
             volatility_score = 15
         elif 0.5 <= atr < 1.0 or 3.0 < atr <= 5.0:
@@ -364,15 +393,16 @@ class SmartPairFinder:
             signals.append("RSI_OVERBOUGHT")
         
         # إشارات الدعم والمقاومة
-        if current_price <= support * 1.02:  # قريب من الدعم (+2%)
-            signals.append("NEAR_SUPPORT")
-        elif current_price >= resistance * 0.98:  # قريب من المقاومة (-2%)
-            signals.append("NEAR_RESISTANCE")
+        if support and resistance and support > 0 and resistance > 0:
+            if current_price <= support * 1.02:  # قريب من الدعم (+2%)
+                signals.append("NEAR_SUPPORT")
+            elif current_price >= resistance * 0.98:  # قريب من المقاومة (-2%)
+                signals.append("NEAR_RESISTANCE")
         
         # إشارات الحجم
-        if len(df) > 10:
+        if df is not None and len(df) > 10:
             avg_volume = df['volume'].tail(10).mean()
-            current_volume = df['volume'].iloc[-1]
+            current_volume = df['volume'].iloc[-1] if not df['volume'].empty else 0
             if current_volume > avg_volume * 1.5:
                 signals.append("HIGH_VOLUME")
         
@@ -402,16 +432,21 @@ class SmartPairFinder:
                 
                 # شروط القبول
                 conditions = {
-                    'min_score_diff': abs(strong.score - weak.score) >= 20,
-                    'min_perf_diff': abs(strong.vs_btc_4h - weak.vs_btc_4h) >= 3,
-                    'good_liquidity': min(strong.volume_usdt, weak.volume_usdt) > 1000000,
-                    'min_pair_score': pair_score >= TRADE_SETTINGS['min_pair_score']
+                    'min_score_diff': abs(strong.score - weak.score) >= TRADE_SETTINGS.get('min_score_difference', 20),
+                    'min_perf_diff': abs(strong.vs_btc_4h - weak.vs_btc_4h) >= TRADE_SETTINGS.get('min_performance_difference', 3),
+                    'good_liquidity': min(strong.volume_usd, weak.volume_usdt) > 1000000,
+                    'min_pair_score': pair_score >= TRADE_SETTINGS.get('min_pair_score', 70)
                 }
                 
                 if all(conditions.values()) and pair_score > best_score:
                     best_score = pair_score
+                    
+                    # تنظيف أسماء الرموز
+                    strong_symbol = strong.symbol.replace('/USDT', '').replace(':USDT', '')
+                    weak_symbol = weak.symbol.replace('/USDT', '').replace(':USDT', '')
+                    
                     best_pair = {
-                        'pair': f"{strong.symbol.replace('/USDT', '').replace(':USDT', '')}/{weak.symbol.replace('/USDT', '').replace(':USDT', '')}",
+                        'pair': f"{strong_symbol}/{weak_symbol}",
                         'strong_coin': strong,
                         'weak_coin': weak,
                         'strong_score': strong.score,
@@ -453,8 +488,8 @@ class SmartPairFinder:
         
         # جودة الإشارات (20%)
         signal_score = 0
-        strong_signals = set(strong.signals)
-        weak_signals = set(weak.signals)
+        strong_signals = set(strong.signals or [])
+        weak_signals = set(weak.signals or [])
         
         if "STRONG_VS_BTC" in strong_signals and "WEAK_VS_BTC" in weak_signals:
             signal_score = 20
