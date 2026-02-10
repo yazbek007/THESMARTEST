@@ -152,7 +152,7 @@ def init_exchange(self, use_testnet: bool):
                 timeframe='1h',
                 limit=100,
                 params={'price': 'mark'}  # ⭐ استخدام سعر العلامة للعقود الآجلة
-            ))
+            )
             
             if len(ohlcv) < 50:
                 return None
