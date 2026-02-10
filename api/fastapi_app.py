@@ -170,7 +170,9 @@ async def auto_scan_background():
 @app.on_event("startup")
 async def startup_event():
     """بدء النظام عند التشغيل"""
-    logging.info("🚀 Starting Smart Crypto Pair Trading Bot...")
+    logging.info("🚀 Starting Smart Crypto Pair Trading Bot (FUTURES)...")
+    logging.info(f"   Leverage: {TRADE_SETTINGS['leverage']}x")
+    logging.info(f"   Position size: ${TRADE_SETTINGS['position_size_usdt']} per coin")
     
     system_status['started'] = True
     system_status['start_time'] = datetime.now().isoformat()
