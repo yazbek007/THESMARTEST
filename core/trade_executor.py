@@ -71,31 +71,25 @@ class FuturesTradeExecutor:
     def init_futures_exchange(self, use_testnet: bool):
         """تهيئة اتصال Binance Futures"""
         from core.config import BINANCE_CONFIG
-        
+    
         config = {
             'enableRateLimit': True,
             'options': {
                 'defaultType': 'future',
                 'adjustForTimeDifference': True,
-                'defaultMarginMode': self.margin_mode,  # 'cross' or 'isolated'
+                'defaultMarginMode': self.margin_mode,
             }
         }
-        
-        # استخدام API keys الحقيقية إذا كانت متوفرة ونريد التداول الحقيقي
-        if BINANCE_CONFIG.get('api_key') and not use_testnet:
-            config['apiKey'] = BINANCE_CONFIG['api_key']
-            config['secret'] = BINANCE_CONFIG['api_secret']
-            config['urls'] = {
-                'api': {
-                    'public': 'https://fapi.binance.com/fapi/v1',
-                    'private': 'https://fapi.binance.com/fapi/v1',
-                }
-            }
-            logger.info("Using real Binance Futures account")
-            
-        elif use_testnet:
+    
+        # ⭐⭐ **التحقق من وجود مفاتيح API** ⭐⭐
+        api_key = BINANCE_CONFIG.get('api_key', '')
+        api_secret = BINANCE_CONFIG.get('api_secret', '')
+    
+        if use_testnet or not api_key or not api_secret:
+            # استخدام Testnet إذا طُلب أو إذا لم تكن المفاتيح موجودة
+            print("⚠️ استخدام Binance Futures Testnet (للتجربة)")
             config.update({
-                'apiKey': 'YOUR_TESTNET_API_KEY',  # استبدل بمفاتيح Testnet
+                'apiKey': 'YOUR_TESTNET_API_KEY',
                 'secret': 'YOUR_TESTNET_SECRET',
                 'urls': {
                     'api': {
@@ -104,11 +98,29 @@ class FuturesTradeExecutor:
                     }
                 }
             })
-            logger.info("Using Binance Futures Testnet")
+            self.use_real_money = False
         else:
-            # بدون مفاتيح (للقراءة فقط)
-            logger.info("Using Binance Futures in read-only mode")
+            # ⭐⭐ **استخدام مفاتيح Binance الحقيقية** ⭐⭐
+            print("🚀 استخدام Binance Futures الحقيقي")
+            config.update({
+                'apiKey': api_key,
+                'secret': api_secret,
+                'urls': {
+                    'api': {
+                        'public': 'https://fapi.binance.com/fapi/v1',
+                        'private': 'https://fapi.binance.com/fapi/v1',
+                    }
+                }
+            }) 
+            self.use_real_money = True
         
+            # تحذير مهم للتداول الحقيقي
+            print("="*60)
+            print("⚠️  تحذير: البوت يعمل بوضع الإنتاج الحقيقي!")
+            print("💰 ستتم تنفيذ صفقات حقيقية باستخدام أموال حقيقية!")
+            print("🔒 تأكد من فهمك للمخاطر قبل المتابعة")
+            print("="*60)
+    
         return ccxt.binance(config)
     
     async def set_leverage_for_symbol(self, symbol: str, leverage: int = 50):
