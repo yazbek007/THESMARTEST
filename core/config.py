@@ -1,46 +1,45 @@
-"""
-إعدادات البوت الرئيسية - يمكن تعديلها حسب الحاجة
-"""
-
-# إعدادات التداول
+# إعدادات التداول (تعديل)
 TRADE_SETTINGS = {
-    'total_capital_usdt': 500,          # إجمالي رأس المال بالدولار
-    'risk_per_trade': 2.0,              # نسبة المخاطرة لكل صفقة (2%)
-    'min_pair_score': 70,               # أقل درجة لقبول الزوج
-    'max_open_trades': 3,               # الحد الأقصى للصفقات المفتوحة
-    'take_profit_ratio': 2.0,           | نسبة الربح/المخاطرة (1:2)
-    'stop_loss_ratio': 1.0,             | نسبة وقف الخسارة
-    'check_interval_minutes': 5,        | فحص الصفقات كل 5 دقائق
-    'scan_interval_hours': 1,           | مسح السوق كل ساعة
+    'total_capital_usdt': 5,          # إجمالي رأس المال بالدولار
+    'risk_per_trade': 20,              # نسبة المخاطرة لكل صفقة (2%)
+    'min_pair_score': 70,
+    'max_open_trades': 1,
+    'take_profit_ratio': 2.0,
+    'stop_loss_ratio': 1.0,
+    'check_interval_minutes': 5,
+    'scan_interval_hours': 1,
+    'leverage': 50,                     # ⭐ إضافة: الرافعة المالية
+    'position_size_usdt': 50,           # ⭐ إضافة: حجم المركز لكل عملة
+    'contract_type': 'future',          # ⭐ إضافة: نوع العقود
+    'margin_mode': 'cross'              # ⭐ إضافة: وضع الهامش (cross أو isolated)
 }
 
-# إعدادات Binance
+# إعدادات Binance Futures (جديد كلياً)
 BINANCE_CONFIG = {
     'enable_rate_limit': True,
-    'options': {'defaultType': 'spot'},
-    # أضف مفتاح API وسري هنا أو في ملف .env
-    'api_key': '',  # سيتم تعبئته من .env
-    'api_secret': '',  # سيتم تعبئته من .env
+    'options': {
+        'defaultType': 'future',        # ⭐ تغيير من 'spot' إلى 'future'
+        'adjustForTimeDifference': True,
+    },
+    'api_key': '',
+    'api_secret': '',
 }
 
-# العملات التي يتم مراقبتها
+# رموز العقود الآجلة (تعديل)
 COINS_TO_MONITOR = [
-    "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT",
-    "ADA/USDT", "DOGE/USDT", "DOT/USDT", "AVAX/USDT",
-    "MATIC/USDT", "LINK/USDT", "ATOM/USDT", "UNI/USDT",
-    "LTC/USDT", "TRX/USDT", "XLM/USDT"
+    #"ETH/USDT:USDT",    # ⭐ إضافة :USDT للعقود الآجلة
+    #"BNB/USDT:USDT",
+    #"SOL/USDT:USDT",
+    "XRP/USDT:USDT",
+    "ADA/USDT:USDT",
+    "DOGE/USDT:USDT",
+    "DOT/USDT:USDT",
+    "AVAX/USDT:USDT",
+    "MATIC/USDT:USDT",
+    "LINK/USDT:USDT",
+    "ATOM/USDT:USDT",
+    "UNI/USDT:USDT",
+    "LTC/USDT:USDT",
+    "TRX/USDT:USDT",
+    "XLM/USDT:USDT"
 ]
-
-# إعدادات NTFY
-NTFY_CONFIG = {
-    'server_url': 'https://ntfy.sh',
-    'topic': 'crypto_pair_bot',  # استبدل بموضوعك الخاص
-    'priority_high': 'high',
-    'priority_normal': 'default'
-}
-
-# إعدادات قاعدة البيانات
-DATABASE_CONFIG = {
-    'path': 'data/trading_bot.db',
-    'cleanup_days': 30  | تنظيف البيانات الأقدم من 30 يوم
-}
