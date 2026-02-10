@@ -434,7 +434,8 @@ class SmartPairFinder:
                 conditions = {
                     'min_score_diff': abs(strong.score - weak.score) >= TRADE_SETTINGS.get('min_score_difference', 20),
                     'min_perf_diff': abs(strong.vs_btc_4h - weak.vs_btc_4h) >= TRADE_SETTINGS.get('min_performance_difference', 3),
-                    'good_liquidity': min(strong.volume_usd, weak.volume_usdt) > 1000000,
+                    # السطر 305 - التصحيح
+                    'good_liquidity': min(strong.volume_usd, weak.volume_usd) > 1000000,
                     'min_pair_score': pair_score >= TRADE_SETTINGS.get('min_pair_score', 70)
                 }
                 
@@ -503,7 +504,7 @@ class SmartPairFinder:
         score += signal_score
         
         # السيولة المشتركة (10%)
-        avg_volume = (strong.volume_usdt + weak.volume_usdt) / 2
+        avg_volume = (strong.volume_usd + weak.volume_usd) / 2
         if avg_volume > 5000000:
             score += 10
         elif avg_volume > 1000000:
