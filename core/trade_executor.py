@@ -48,17 +48,18 @@ class Trade:
 
 class FuturesTradeExecutor:
     def __init__(self, use_testnet: bool = True):
+        # إعدادات العقود الآجلة أولاً (قبل أي شيء آخر)
+        self.leverage = TRADE_SETTINGS['leverage']
+        self.position_size = TRADE_SETTINGS['position_size_usdt']
+        self.margin_mode = TRADE_SETTINGS.get('margin_mode', 'cross')  # ⭐ تعريف هنا أولاً
+        
+        # الآن تهيئة باقي المتغيرات
         self.exchange = self.init_futures_exchange(use_testnet)
         self.risk_manager = RiskManager()
         self.active_trades: Dict[str, Trade] = {}
         self.closed_trades: List[Trade] = []
         self.use_real_money = not use_testnet
         self.total_funding_paid = 0.0
-        
-        # إعدادات العقود الآجلة
-        self.leverage = TRADE_SETTINGS['leverage']
-        self.position_size = TRADE_SETTINGS['position_size_usdt']
-        self.margin_mode = TRADE_SETTINGS.get('margin_mode', 'cross')
         
         logger.info(f"✅ FuturesTradeExecutor initialized")
         logger.info(f"   Testnet: {use_testnet}")
