@@ -27,7 +27,7 @@ class CoinAnalysis:
     vs_btc_1d: float
     rsi: float
     atr_percent: float
-    volume_usdt: float
+    volume_usd: float
     score: float = 0.0
     signals: List[str] = None
     support_level: float = None
@@ -43,36 +43,33 @@ class SmartPairFinder:
         self.btc_symbol = "BTC/USDT"
         self.cache = {}
         
-def init_exchange(self, use_testnet: bool):
-    """تهيئة اتصال Binance Futures"""
-    from core.config import BINANCE_CONFIG
-    
-    config = {
-        'enableRateLimit': True,
-        'options': {
-            'defaultType': 'future',  # ⭐ تغيير إلى 'future'
-            'adjustForTimeDifference': True,
-        }
-    }
-    
-    # إضافة API keys إذا كانت موجودة
-    if BINANCE_CONFIG.get('api_key'):
-        config['apiKey'] = BINANCE_CONFIG['api_key']
-        config['secret'] = BINANCE_CONFIG['api_secret']
-    
-    if use_testnet:
-        config.update({
-            'urls': {
-                'api': {
-                    'public': 'https://testnet.binancefuture.com/fapi/v1',
-                    'private': 'https://testnet.binancefuture.com/fapi/v1',
-                }
-            }
-        })
+    def init_exchange(self, use_testnet: bool):
+        """تهيئة اتصال Binance"""
+        from core.config import BINANCE_CONFIG
         
-    return ccxt.binance(config)
-
-
+        config = {
+            'enableRateLimit': True,
+            'options': {'defaultType': 'future'}  # ⭐ تغيير إلى 'future' للعقود الآجلة
+        }
+        
+        # إضافة API keys إذا كانت موجودة
+        if BINANCE_CONFIG.get('api_key'):
+            config['apiKey'] = BINANCE_CONFIG['api_key']
+            config['secret'] = BINANCE_CONFIG['api_secret']
+        
+        if use_testnet:
+            config.update({
+                'apiKey': 'YOUR_TESTNET_API_KEY',  # استبدل بمفاتيح Testnet
+                'secret': 'YOUR_TESTNET_SECRET',
+                'urls': {
+                    'api': {
+                        'public': 'https://testnet.binancefuture.com/fapi/v1',
+                        'private': 'https://testnet.binancefuture.com/fapi/v1'
+                    }
+                }
+            })
+            
+        return ccxt.binance(config)
     
     async def find_best_trading_pair(self) -> Optional[Dict]:
         """
@@ -143,15 +140,16 @@ def init_exchange(self, use_testnet: bool):
     async def analyze_coin(self, symbol: str, btc_data: pd.DataFrame) -> Optional[CoinAnalysis]:
         """تحليل شامل لعملة معينة"""
         try:
+            # تنظيف الرمز لإزالة :USDT إذا كان موجوداً
             clean_symbol = symbol.replace(':USDT', '')
             
-            # جلب بيانات OHLCV
+            # جلب بيانات OHLCV للعقود الآجلة
             ohlcv = await asyncio.to_thread(
                 self.exchange.fetch_ohlcv,
                 clean_symbol,
                 timeframe='1h',
                 limit=100,
-                params={'price': 'mark'}  # ⭐ استخدام سعر العلامة للعقود الآجلة
+                params={'price': 'mark'}  # استخدام سعر العلامة للعقود الآجلة
             )
             
             if len(ohlcv) < 50:
@@ -165,10 +163,10 @@ def init_exchange(self, use_testnet: bool):
             df.set_index('timestamp', inplace=True)
             
             # جلب بيانات التيكر
-            ticker = await asyncio.to_thread(self.exchange.fetch_ticker, symbol)
+            ticker = await asyncio.to_thread(self.exchange.fetch_ticker, clean_symbol)
             
             # جلب سعر BTC للعملة
-            symbol_btc = symbol.replace('USDT', 'BTC')
+            symbol_btc = clean_symbol.replace('USDT', 'BTC')
             try:
                 ticker_btc = await asyncio.to_thread(self.exchange.fetch_ticker, symbol_btc)
                 price_btc = ticker_btc['last']
@@ -186,7 +184,7 @@ def init_exchange(self, use_testnet: bool):
             # حساب المؤشرات الفنية
             rsi = self.calculate_rsi(df['close'])
             atr = self.calculate_atr(df)
-            atr_percent = (atr / ticker['last'] * 100) if atr else 0
+            atr_percent = (atr / ticker['last'] * 100) if atr and ticker['last'] > 0 else 0
             
             # حساب مستويات الدعم والمقاومة
             support, resistance = self.calculate_support_resistance(df)
@@ -205,8 +203,9 @@ def init_exchange(self, use_testnet: bool):
             # اكتشاف الإشارات
             signals = self.detect_signals(df, vs_btc_4h, rsi, support, resistance, ticker['last'])
             
+            # ⭐⭐ **السطر المصحح - تأكد من أن كل الأقواس متطابقة** ⭐⭐
             return CoinAnalysis(
-                symbol=symbol,
+                symbol=symbol,  # نستخدم الرمز الأصلي مع :USDT
                 price=ticker['last'],
                 price_btc=price_btc,
                 vs_btc_1h=vs_btc_1h,
@@ -214,12 +213,13 @@ def init_exchange(self, use_testnet: bool):
                 vs_btc_1d=vs_btc_1d,
                 rsi=rsi,
                 atr_percent=atr_percent,
-                volume_usdt=ticker['quoteVolume'],
+                volume_usd=ticker['quoteVolume'],
                 score=score,
                 signals=signals,
                 support_level=support,
                 resistance_level=resistance
             )
+            # ⭐⭐ **لا يوجد قوس إضافي هنا** ⭐⭐
             
         except Exception as e:
             logger.error(f"خطأ في تحليل {symbol}: {e}")
@@ -232,11 +232,26 @@ def init_exchange(self, use_testnet: bool):
         
         close = df['close']
         
-        returns = {
-            '1h': ((close.iloc[-1] / close.iloc[-1]) - 1) * 100 if len(close) >= 1 else 0,
-            '4h': ((close.iloc[-1] / close.iloc[-4]) - 1) * 100 if len(close) >= 4 else 0,
-            '1d': ((close.iloc[-1] / close.iloc[-24]) - 1) * 100 if len(close) >= 24 else 0
-        }
+        # حساب العوائد
+        returns = {}
+        
+        # 1 ساعة
+        if len(close) >= 1:
+            returns['1h'] = ((close.iloc[-1] / close.iloc[-1]) - 1) * 100
+        else:
+            returns['1h'] = 0
+        
+        # 4 ساعات
+        if len(close) >= 4:
+            returns['4h'] = ((close.iloc[-1] / close.iloc[-4]) - 1) * 100
+        else:
+            returns['4h'] = 0
+        
+        # 1 يوم (24 ساعة)
+        if len(close) >= 24:
+            returns['1d'] = ((close.iloc[-1] / close.iloc[-24]) - 1) * 100
+        else:
+            returns['1d'] = 0
         
         return returns
     
@@ -290,7 +305,7 @@ def init_exchange(self, use_testnet: bool):
         
         # الأداء مقابل BTC (40%)
         perf_score = (metrics['vs_btc_4h'] * 0.6 + metrics['vs_btc_1d'] * 0.4)
-        perf_score = max(min(perf_score, 10), -10)  |  تحديد بين -10 و +10
+        perf_score = max(min(perf_score, 10), -10)  # تحديد بين -10 و +10
         score += ((perf_score + 10) / 20) * 40  # تحويل إلى 0-40
         
         # RSI (25%)
@@ -349,9 +364,9 @@ def init_exchange(self, use_testnet: bool):
             signals.append("RSI_OVERBOUGHT")
         
         # إشارات الدعم والمقاومة
-        if current_price <= support * 1.02:  |  قريب من الدعم (+2%)
+        if current_price <= support * 1.02:  # قريب من الدعم (+2%)
             signals.append("NEAR_SUPPORT")
-        elif current_price >= resistance * 0.98:  |  قريب من المقاومة (-2%)
+        elif current_price >= resistance * 0.98:  # قريب من المقاومة (-2%)
             signals.append("NEAR_RESISTANCE")
         
         # إشارات الحجم
@@ -396,7 +411,7 @@ def init_exchange(self, use_testnet: bool):
                 if all(conditions.values()) and pair_score > best_score:
                     best_score = pair_score
                     best_pair = {
-                        'pair': f"{strong.symbol.replace('/USDT', '')}/{weak.symbol.replace('/USDT', '')}",
+                        'pair': f"{strong.symbol.replace('/USDT', '').replace(':USDT', '')}/{weak.symbol.replace('/USDT', '').replace(':USDT', '')}",
                         'strong_coin': strong,
                         'weak_coin': weak,
                         'strong_score': strong.score,
@@ -434,7 +449,7 @@ def init_exchange(self, use_testnet: bool):
         
         # اختلاف الأداء مقابل BTC (30%)
         perf_diff = abs(strong.vs_btc_4h - weak.vs_btc_4h)
-        score += min(perf_diff * 3, 30)  |  كل 1% فرق = 3 نقاط
+        score += min(perf_diff * 3, 30)  # كل 1% فرق = 3 نقاط
         
         # جودة الإشارات (20%)
         signal_score = 0
@@ -465,7 +480,7 @@ def init_exchange(self, use_testnet: bool):
     
     def generate_recommendation(self, strong: CoinAnalysis, weak: CoinAnalysis) -> str:
         """توليد توصية التداول"""
-        strong_symbol = strong.symbol.replace('/USDT', '')
-        weak_symbol = weak.symbol.replace('/USDT', '')
+        strong_symbol = strong.symbol.replace('/USDT', '').replace(':USDT', '')
+        weak_symbol = weak.symbol.replace('/USDT', '').replace(':USDT', '')
         
         return f"LONG_{strong_symbol}_SHORT_{weak_symbol}"
