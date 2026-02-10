@@ -132,7 +132,7 @@ async def auto_scan_background():
             # البحث عن أفضل زوج
             best_pair = await pair_finder.find_best_trading_pair()
             
-            if best_pair and best_pair['pair_score'] >= 80:  |  إشارة قوية جداً
+            if best_pair and best_pair['pair_score'] >= 80:    إشارة قوية جداً
                 # إرسال إشعار
                 await send_ntfy_notification(
                     title="🎯 إشارة تلقائية قوية",
