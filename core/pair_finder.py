@@ -43,24 +43,36 @@ class SmartPairFinder:
         self.btc_symbol = "BTC/USDT"
         self.cache = {}
         
-    def init_exchange(self, use_testnet: bool):
-        """تهيئة اتصال Binance"""
-        from core.config import BINANCE_CONFIG
-        
-        config = {
-            'enableRateLimit': True,
-            'options': {'defaultType': 'spot'}
+def init_exchange(self, use_testnet: bool):
+    """تهيئة اتصال Binance Futures"""
+    from core.config import BINANCE_CONFIG
+    
+    config = {
+        'enableRateLimit': True,
+        'options': {
+            'defaultType': 'future',  # ⭐ تغيير إلى 'future'
+            'adjustForTimeDifference': True,
         }
+    }
+    
+    # إضافة API keys إذا كانت موجودة
+    if BINANCE_CONFIG.get('api_key'):
+        config['apiKey'] = BINANCE_CONFIG['api_key']
+        config['secret'] = BINANCE_CONFIG['api_secret']
+    
+    if use_testnet:
+        config.update({
+            'urls': {
+                'api': {
+                    'public': 'https://testnet.binancefuture.com/fapi/v1',
+                    'private': 'https://testnet.binancefuture.com/fapi/v1',
+                }
+            }
+        })
         
-        # إضافة API keys إذا كانت موجودة
-        if BINANCE_CONFIG.get('api_key'):
-            config['apiKey'] = BINANCE_CONFIG['api_key']
-            config['secret'] = BINANCE_CONFIG['api_secret']
-        
-        if use_testnet:
-            config['urls'] = {'api': 'https://testnet.binance.vision'}
-            
-        return ccxt.binance(config)
+    return ccxt.binance(config)
+
+
     
     async def find_best_trading_pair(self) -> Optional[Dict]:
         """
@@ -131,13 +143,16 @@ class SmartPairFinder:
     async def analyze_coin(self, symbol: str, btc_data: pd.DataFrame) -> Optional[CoinAnalysis]:
         """تحليل شامل لعملة معينة"""
         try:
+            clean_symbol = symbol.replace(':USDT', '')
+            
             # جلب بيانات OHLCV
             ohlcv = await asyncio.to_thread(
                 self.exchange.fetch_ohlcv,
-                symbol,
+                clean_symbol,
                 timeframe='1h',
-                limit=100
-            )
+                limit=100,
+                params={'price': 'mark'}  # ⭐ استخدام سعر العلامة للعقود الآجلة
+            ))
             
             if len(ohlcv) < 50:
                 return None
