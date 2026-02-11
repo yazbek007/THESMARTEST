@@ -45,23 +45,30 @@ class SmartPairFinder:
         self.cache = {}
         
     def init_exchange(self, use_testnet: bool):
-        """تهيئة اتصال Binance"""
-        from core.config import BINANCE_CONFIG
-        
+       """تهيئة اتصال Binance"""
+        from core.config import BINANCE_CONFIG, TRADE_SETTINGS
+    
+        # ⭐⭐ إذا كانت المفاتيح حقيقية، تجاهل use_testnet ⭐⭐
+        if BINANCE_CONFIG and BINANCE_CONFIG.get('api_key') and BINANCE_CONFIG.get('api_secret'):
+            if BINANCE_CONFIG['api_key'] != 'testnet_api_key':
+                print("🚀 اكتشاف مفاتيح Production - استخدام Binance الحقيقي")
+                use_testnet = False
+    
         config = {
             'enableRateLimit': True,
-            'options': {'defaultType': 'future'}  # ⭐ تغيير إلى 'future' للعقود الآجلة
+            'options': {'defaultType': 'future'}
         }
-        
-        # إضافة API keys إذا كانت موجودة
-        if BINANCE_CONFIG.get('api_key'):
+    
+        # إضافة API keys
+        if BINANCE_CONFIG and BINANCE_CONFIG.get('api_key'):
             config['apiKey'] = BINANCE_CONFIG['api_key']
             config['secret'] = BINANCE_CONFIG['api_secret']
-        
+    
         if use_testnet:
+            print("🔧 استخدام Testnet للتجربة")
             config.update({
-                'apiKey': 'YOUR_TESTNET_API_KEY',  # استبدل بمفاتيح Testnet
-                'secret': 'YOUR_TESTNET_SECRET',
+                'apiKey': 'testnet_api_key',
+                'secret': 'testnet_secret',
                 'urls': {
                     'api': {
                         'public': 'https://testnet.binancefuture.com/fapi/v1',
@@ -69,7 +76,17 @@ class SmartPairFinder:
                     }
                 }
             })
-            
+        else:
+            print("🚀 استخدام Binance Production الحقيقي")
+            if not config.get('apiKey') or config['apiKey'] == 'testnet_api_key':
+                raise Exception("❌ مفاتيح API غير صالحة للـ Production")
+             config['urls'] = {
+                'api': {
+                    'public': 'https://fapi.binance.com/fapi/v1',
+                    'private': 'https://fapi.binance.com/fapi/v1'
+                }
+            }
+    
         return ccxt.binance(config)
     
     async def find_best_trading_pair(self) -> Optional[Dict]:
