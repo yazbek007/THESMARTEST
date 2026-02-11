@@ -50,11 +50,23 @@ if __name__ == "__main__":
     # إنشاء المجلدات
     create_directories()
     
+    # ⭐⭐ إعدادات Render - مهم جداً ⭐⭐
+    port = int(os.getenv("PORT", 8000))  # Render يمرر PORT تلقائياً
+    host = os.getenv("HOST", "0.0.0.0")
+    
+    # التحقق من وضع التشغيل
+    is_production = os.getenv("RENDER", False) or os.getenv("PRODUCTION", False)
+    
+    print(f"\n📡 بيئة التشغيل: {'الإنتاج (Render)' if is_production else 'تطوير محلي'}")
+    print(f"   المضيف: {host}")
+    print(f"   المنفذ: {port}")
+    print(f"   Auto-reload: {not is_production}\n")
+    
     # تشغيل الخادم
     uvicorn.run(
         "api.fastapi_app:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
+        host=host,
+        port=port,
+        reload=not is_production,  # ⭐ إيقاف reload في الإنتاج
         log_level="info"
     )
