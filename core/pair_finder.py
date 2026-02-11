@@ -60,17 +60,26 @@ class SmartPairFinder:
             "ATOM/USDT"
         ]
         
-    def init_exchange(self, use_testnet: bool):
-        """تهيئة اتصال Binance"""
+    
+    def init_exchange(self, use_testnet: bool = False):
+        """تهيئة اتصال Binance Futures مع معالجة الأخطاء"""
+        from core.config import BINANCE_CONFIG  # استيراد من ملف الإعدادات
+    
         config = {
             'enableRateLimit': True,
-            'options': {'defaultType': 'future'}
+            'options': {'defaultType': 'future'},
+            'timeout': 30000  # زيادة المهلة إلى 30 ثانية
         }
-        
+    
+        # محاولة استخدام API keys من الإعدادات
+        api_key = BINANCE_CONFIG.get('api_key')
+        api_secret = BINANCE_CONFIG.get('api_secret')
+    
         if use_testnet:
+            logger.info("🌐 استخدام Binance Testnet Futures...")
+        
+            # ⭐ Testnet URLs
             config.update({
-                'apiKey': 'YOUR_TESTNET_API_KEY',
-                'secret': 'YOUR_TESTNET_SECRET',
                 'urls': {
                     'api': {
                         'public': 'https://testnet.binancefuture.com/fapi/v1',
@@ -78,11 +87,68 @@ class SmartPairFinder:
                     }
                 }
             })
+        
+            # استخدام API keys من الإعدادات أو القيم الافتراضية
+            if api_key and api_secret:
+                config['apiKey'] = api_key
+                config['secret'] = api_secret
+                logger.info("✅ استخدام API keys من الإعدادات")
+            else:
+                logger.warning("⚠️  لم يتم العثور على API keys لـ Testnet")
+                logger.info("يمكنك إضافتها في core/config.py")
+                logger.info("أو زيارة: https://testnet.binancefuture.com/ لإنشاء مفاتيح")
+    
         else:
-            # يمكنك إضافة API keys هنا إذا كنت بحاجة إليها
-            pass
-            
-        return ccxt.binance(config)
+            logger.info("🌐 استخدام Binance Mainnet Futures...")
+        
+            if api_key and api_secret:
+                config['apiKey'] = api_key
+                config['secret'] = api_secret
+                logger.info("✅ استخدام API keys من الإعدادات")
+            else:
+                logger.warning("⚠️  تشغيل في الوضع العام (بدون API keys)")
+                logger.info("سيقتصر الوصول على البيانات العامة فقط")
+    
+        try:
+            exchange = ccxt.binance(config)
+        
+            # اختبار الاتصال بجلب بيانات بسيطة
+            logger.info("🔍 اختبار الاتصال...")
+            ticker = exchange.fetch_ticker(self.btc_symbol)
+            logger.info(f"✅ الاتصال ناجح - سعر BTC: {ticker['last']}")
+        
+            # اختبار جلب بيانات OHLCV
+            ohlcv = exchange.fetch_ohlcv(self.btc_symbol, '1h', limit=1)
+            if ohlcv:
+                logger.info(f"✅ يمكن جلب بيانات OHLCV ({len(ohlcv)} نقطة)")
+        
+            return exchange
+        
+        except ccxt.AuthenticationError as e:
+            logger.error(f"❌ خطأ في المصادقة: {e}")
+            logger.error("حل المشكلة:")
+            logger.error("1. تأكد من صحة API keys")
+            logger.error("2. تأكد من تفعيل Futures Trading")
+            logger.error("3. جرب بدون API keys")
+        
+            # المحاولة بدون API keys
+            config.pop('apiKey', None)
+            config.pop('secret', None)
+            exchange = ccxt.binance(config)
+            logger.info("🔄 تشغيل في وضع القراءة فقط (بدون API keys)")
+            return exchange
+        
+        except Exception as e:
+            logger.error(f"❌ خطأ في الاتصال: {e}")
+        
+            # المحاولة بإعدادات بسيطة
+            simple_config = {
+                'enableRateLimit': True,
+                'options': {'defaultType': 'future'}
+            }
+            exchange = ccxt.binance(simple_config)
+            logger.info("🔄 المحاولة بإعدادات بسيطة")
+            return exchange
     
     def clear_cache(self):
         """مسح الكاش القديم"""
