@@ -43,6 +43,22 @@ class SmartPairFinder:
         self.btc_symbol = "BTC/USDT"
         self.cache = {}
         self.cache_timeout = 300  # 5 دقائق
+        # قائمة العملات الافتراضية للمراقبة
+        self.default_coins = [
+            "BTC/USDT",
+            "ETH/USDT", 
+            "BNB/USDT",
+            "ADA/USDT",
+            "DOGE/USDT",
+            "XRP/USDT",
+            "DOT/USDT",
+            "UNI/USDT",
+            "LINK/USDT",
+            "MATIC/USDT",
+            "SOL/USDT",
+            "AVAX/USDT",
+            "ATOM/USDT"
+        ]
         
     def init_exchange(self, use_testnet: bool):
         """تهيئة اتصال Binance"""
@@ -76,17 +92,30 @@ class SmartPairFinder:
             if current_time - v['timestamp'] < self.cache_timeout
         }
     
-    async def find_best_trading_pair(self, coins_to_monitor: List[str]) -> Optional[Dict[str, Any]]:
+    async def find_best_trading_pair(self, coins_to_monitor: List[str] = None) -> Optional[Dict[str, Any]]:
         """
         البحث عن أفضل زوج تداول مع مراعاة:
         1. القوة النسبية مقابل BTC
         2. مستويات الدعم والمقاومة
         3. السيولة
         4. الإشارات الفنية
+        
+        Args:
+            coins_to_monitor: قائمة العملات للمراقبة (اختياري)
+        
+        Returns:
+            Dictionary يحتوي على معلومات أفضل زوج أو None
         """
         logger.info("🔍 بدء البحث عن أفضل زوج تداول...")
         
         try:
+            # استخدام القائمة الممررة أو القائمة الافتراضية
+            if coins_to_monitor is None:
+                coins_to_monitor = self.default_coins
+                logger.info(f"استخدام القائمة الافتراضية ({len(coins_to_monitor)} عملة)")
+            else:
+                logger.info(f"استخدام القائمة المخصصة ({len(coins_to_monitor)} عملة)")
+            
             # جلب وتحليل بيانات BTC أولاً
             btc_data = await self.get_btc_analysis()
             
@@ -208,6 +237,15 @@ class SmartPairFinder:
             
             logger.debug(f"تحليل العملة: {clean_symbol}")
             
+            # استخدام الكاش إذا كان متاحًا
+            cache_key = f"analysis_{clean_symbol}"
+            current_time = time.time()
+            
+            if cache_key in self.cache:
+                cache_data = self.cache[cache_key]
+                if current_time - cache_data['timestamp'] < 30:  # 30 ثانية
+                    return cache_data['data']
+            
             # جلب بيانات OHLCV
             ohlcv = await asyncio.to_thread(
                 self.exchange.fetch_ohlcv,
@@ -271,7 +309,8 @@ class SmartPairFinder:
             # اكتشاف الإشارات
             signals = self.detect_signals(df, vs_btc_4h, rsi, support, resistance, current_price)
             
-            return CoinAnalysis(
+            # إنشاء كائن التحليل
+            analysis = CoinAnalysis(
                 symbol=symbol,
                 price=current_price,
                 price_btc=price_btc,
@@ -286,6 +325,14 @@ class SmartPairFinder:
                 support_level=support,
                 resistance_level=resistance
             )
+            
+            # حفظ في الكاش
+            self.cache[cache_key] = {
+                'data': analysis,
+                'timestamp': current_time
+            }
+            
+            return analysis
             
         except Exception as e:
             logger.error(f"❌ خطأ في تحليل {symbol}: {e}")
@@ -302,9 +349,9 @@ class SmartPairFinder:
             
             returns = {}
             
-            # 1 ساعة
-            if len(close) >= 1:
-                returns['1h'] = 0.0
+            # 1 ساعة (آخر ساعة مقارنة بسابقتها)
+            if len(close) >= 2:
+                returns['1h'] = ((close.iloc[-1] / close.iloc[-2]) - 1) * 100
             else:
                 returns['1h'] = 0.0
             
@@ -615,30 +662,46 @@ class SmartPairFinder:
         weak_symbol = weak.symbol.replace('/USDT', '').replace(':USDT', '')
         
         return f"LONG_{strong_symbol}_SHORT_{weak_symbol}"
+    
+    def set_default_coins(self, coins: List[str]):
+        """تعيين قائمة العملات الافتراضية"""
+        self.default_coins = coins
+        logger.info(f"تم تحديث القائمة الافتراضية إلى {len(coins)} عملة")
+    
+    def add_coin_to_monitor(self, coin: str):
+        """إضافة عملة إلى القائمة الافتراضية"""
+        if coin not in self.default_coins:
+            self.default_coins.append(coin)
+            logger.info(f"تمت إضافة {coin} إلى القائمة الافتراضية")
+
+
+# دالة مساعدة للاستخدام
+async def get_best_pair(coins_list: List[str] = None, use_testnet: bool = False) -> Optional[Dict]:
+    """
+    دالة مساعدة للحصول على أفضل زوج تداول
+    
+    Args:
+        coins_list: قائمة العملات (اختياري)
+        use_testnet: استخدام Testnet (اختياري)
+    
+    Returns:
+        معلومات أفضل زوج أو None
+    """
+    finder = SmartPairFinder(use_testnet=use_testnet)
+    return await finder.find_best_trading_pair(coins_list)
 
 
 # اختبار الوحدة
 if __name__ == "__main__":
     async def test():
-        # قائمة العملات للمراقبة
-        coins_to_monitor = [
-            "BTC/USDT",
-            "ETH/USDT", 
-            "BNB/USDT",
-            "ADA/USDT",
-            "DOGE/USDT",
-            "XRP/USDT",
-            "DOT/USDT",
-            "UNI/USDT",
-            "LINK/USDT",
-            "MATIC/USDT"
-        ]
+        print("🔍 بدء اختبار SmartPairFinder...")
         
+        # اختبار مع القائمة الافتراضية
         finder = SmartPairFinder(use_testnet=False)
-        result = await finder.find_best_trading_pair(coins_to_monitor)
+        result = await finder.find_best_trading_pair()
         
         if result:
-            print("\n" + "="*50)
+            print("\n" + "="*60)
             print(f"✅ أفضل زوج: {result['pair']}")
             print(f"📊 درجة الزوج: {result['pair_score']:.1f}")
             print(f"📈 توصية: {result['recommendation']}")
@@ -647,8 +710,16 @@ if __name__ == "__main__":
             print(f"📊 فرق الأداء (4h): {result['performance_diff_4h']:.2f}%")
             print(f"📈 إشارات القوية: {result['signals']['strong']}")
             print(f"📉 إشارات الضعيفة: {result['signals']['weak']}")
-            print("="*50)
+            print("="*60)
         else:
             print("❌ لم يتم العثور على زوج مناسب")
+        
+        # اختبار مع قائمة مخصصة
+        print("\n🔍 اختبار مع قائمة مخصصة...")
+        custom_coins = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT"]
+        result2 = await finder.find_best_trading_pair(custom_coins)
+        
+        if result2:
+            print(f"✅ تم العثور على زوج: {result2['pair']}")
     
     asyncio.run(test())
