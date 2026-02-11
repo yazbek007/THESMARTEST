@@ -54,7 +54,6 @@ class SmartPairFinder:
             "DOT/USDT",
             "UNI/USDT",
             "LINK/USDT",
-            "MATIC/USDT",
             "SOL/USDT",
             "AVAX/USDT",
             "ATOM/USDT"
