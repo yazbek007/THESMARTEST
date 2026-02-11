@@ -34,8 +34,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# تهيئة المكونات
-pair_finder = SmartPairFinder(use_testnet=True)
+# ⭐⭐ استخدم False للإنتاج الحقيقي ⭐⭐
+pair_finder = SmartPairFinder(use_testnet=False)  # تغيير من True إلى False
 # ⭐ trade_executor تم استيراده مباشرة من trade_executor.py
 monitoring_task = None
 auto_scan_task = None
