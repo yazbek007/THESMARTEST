@@ -45,7 +45,7 @@ class SmartPairFinder:
         self.cache = {}
         
     def init_exchange(self, use_testnet: bool):
-       """تهيئة اتصال Binance"""
+        """تهيئة اتصال Binance"""
         from core.config import BINANCE_CONFIG, TRADE_SETTINGS
     
         # ⭐⭐ إذا كانت المفاتيح حقيقية، تجاهل use_testnet ⭐⭐
