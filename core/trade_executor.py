@@ -827,5 +827,5 @@ class FuturesTradeExecutor:
             logger.error(f"Failed to get open positions: {e}")
             return []
 
-# Singleton instance
-trade_executor = FuturesTradeExecutor(use_testnet=True)
+# Singleton instance - استخدام Production
+trade_executor = FuturesTradeExecutor(use_testnet=False)  # تغيير من True إلى False
