@@ -141,69 +141,86 @@ class SmartPairFinder:
                 timeframe='1h',
                 limit=100
             )
-            
+        
+            if not ohlcv or len(ohlcv) < 20:
+                logger.error("❌ لم يتم استلام بيانات كافية لـ BTC")
+                return None
+        
             df = pd.DataFrame(
                 ohlcv,
                 columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
             )
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)
+        
+            # ✅ التحقق الصحيح من DataFrame
+            if df.empty:
+                logger.error("❌ DataFrame فارغ")
+                return None
             
+            logger.info(f"✅ تم جلب {len(df)} شمعة لـ BTC")
             return df
-            
+        
         except Exception as e:
-            logger.error(f"خطأ في جلب بيانات BTC: {e}")
-            return None
+            logger.error(f"❌ خطأ في جلب بيانات BTC: {e}")
+            return None  # ⭐ إرجاع None وليس DataFrame
     
-    async def analyze_coin(self, symbol: str, btc_data: pd.DataFrame) -> Optional[CoinAnalysis]:
+    async def analyze_coin(self, symbol: str, btc_data: Optional[pd.DataFrame]) -> Optional[CoinAnalysis]:
         """تحليل شامل لعملة معينة"""
         try:
-            # تنظيف الرمز لإزالة :USDT إذا كان موجوداً
-            clean_symbol = symbol.replace(':USDT', '')
-            
-            # جلب بيانات OHLCV للعقود الآجلة
+            # تنظيف الرمز
+            clean_symbol = symbol.replace(':USDT', '').replace('/USDT', '')
+        
+            # جلب بيانات OHLCV
             ohlcv = await asyncio.to_thread(
                 self.exchange.fetch_ohlcv,
                 clean_symbol,
                 timeframe='1h',
                 limit=100,
-                params={'price': 'mark'}  # استخدام سعر العلامة للعقود الآجلة
+                params={'price': 'mark'}
             )
-            
-            if len(ohlcv) < 50:
+        
+            if not ohlcv or len(ohlcv) < 50:
+                logger.warning(f"⚠️ بيانات غير كافية لـ {symbol}")
                 return None
-            
+        
             df = pd.DataFrame(
                 ohlcv,
                 columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
             )
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)
-            
+        
             # جلب بيانات التيكر
             ticker = await asyncio.to_thread(self.exchange.fetch_ticker, clean_symbol)
-            
-            # جلب سعر BTC للعملة
-            symbol_btc = clean_symbol.replace('USDT', 'BTC')
-            try:
-                ticker_btc = await asyncio.to_thread(self.exchange.fetch_ticker, symbol_btc)
-                price_btc = ticker_btc['last']
-            except:
-                price_btc = ticker['last'] / (btc_data['close'].iloc[-1] if len(btc_data) > 0 else 1)
-            
+        
+            # ✅ التحقق من btc_data
+            if btc_data is not None and not btc_data.empty and len(btc_data) > 0:
+                try:
+                    # محاولة جلب سعر BTC للعملة
+                    symbol_btc = f"{clean_symbol}/BTC"
+                    ticker_btc = await asyncio.to_thread(self.exchange.fetch_ticker, symbol_btc)
+                    price_btc = ticker_btc['last']
+                except:
+                    # حساب سعر BTC يدوياً
+                    price_btc = ticker['last'] / btc_data['close'].iloc[-1]
+            else:
+                price_btc = 0
+                logger.warning(f"⚠️ بيانات BTC غير متوفرة، تعيين price_btc=0")
+        
             # حساب الأداء مقابل BTC
             coin_returns = self.calculate_returns(df)
-            btc_returns = self.calculate_returns(btc_data)
-            
+            btc_returns = self.calculate_returns(btc_data) if btc_data is not None else {'1h': 0, '4h': 0, '1d': 0}
+        
             vs_btc_1h = coin_returns.get('1h', 0) - btc_returns.get('1h', 0)
             vs_btc_4h = coin_returns.get('4h', 0) - btc_returns.get('4h', 0)
             vs_btc_1d = coin_returns.get('1d', 0) - btc_returns.get('1d', 0)
-            
+        
             # حساب المؤشرات الفنية
             rsi = self.calculate_rsi(df['close'])
             atr = self.calculate_atr(df)
             atr_percent = (atr / ticker['last'] * 100) if atr and ticker['last'] > 0 else 0
-            
+        
             # حساب مستويات الدعم والمقاومة
             support, resistance = self.calculate_support_resistance(df)
             
@@ -214,16 +231,15 @@ class SmartPairFinder:
                 'vs_btc_1d': vs_btc_1d,
                 'rsi': rsi,
                 'atr_percent': atr_percent,
-                'volume': ticker['quoteVolume'],
+                'volume': ticker.get('quoteVolume', 0),
                 'price': ticker['last']
             })
-            
+        
             # اكتشاف الإشارات
             signals = self.detect_signals(df, vs_btc_4h, rsi, support, resistance, ticker['last'])
-            
-            # ⭐⭐ **السطر المصحح - تأكد من أن كل الأقواس متطابقة** ⭐⭐
+        
             return CoinAnalysis(
-                symbol=symbol,  # نستخدم الرمز الأصلي مع :USDT
+                symbol=symbol,
                 price=ticker['last'],
                 price_btc=price_btc,
                 vs_btc_1h=vs_btc_1h,
@@ -231,16 +247,15 @@ class SmartPairFinder:
                 vs_btc_1d=vs_btc_1d,
                 rsi=rsi,
                 atr_percent=atr_percent,
-                volume_usd=ticker['quoteVolume'],
+                volume_usd=ticker.get('quoteVolume', 0),
                 score=score,
                 signals=signals,
                 support_level=support,
                 resistance_level=resistance
             )
-            # ⭐⭐ **لا يوجد قوس إضافي هنا** ⭐⭐
-            
+        
         except Exception as e:
-            logger.error(f"خطأ في تحليل {symbol}: {e}")
+            logger.error(f"❌ خطأ في تحليل {symbol}: {e}")
             return None
     
     def calculate_returns(self, df: pd.DataFrame) -> Dict[str, float]:
