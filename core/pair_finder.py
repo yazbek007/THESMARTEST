@@ -80,7 +80,7 @@ class SmartPairFinder:
             print("🚀 استخدام Binance Production الحقيقي")
             if not config.get('apiKey') or config['apiKey'] == 'testnet_api_key':
                 raise Exception("❌ مفاتيح API غير صالحة للـ Production")
-             config['urls'] = {
+            config['urls'] = {
                 'api': {
                     'public': 'https://fapi.binance.com/fapi/v1',
                     'private': 'https://fapi.binance.com/fapi/v1'
