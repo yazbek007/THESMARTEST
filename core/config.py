@@ -63,24 +63,27 @@ def get_binance_config():
     api_key = os.getenv('BINANCE_API_KEY', '')
     api_secret = os.getenv('BINANCE_API_SECRET', '')
     
-    # ⭐⭐ التحقق من وجود المفاتيح ⭐⭐
-    keys_status = "✅ مضبوط" if api_key and api_secret else "❌ غير مضبوط"
+    # ⭐⭐ تحديد وضع التشغيل (Production هو الافتراضي) ⭐⭐
+    use_testnet = os.getenv('USE_TESTNET', 'false').lower() == 'true'
     
-    # تحديد وضع التشغيل (Testnet أو Production)
-    use_testnet = os.getenv('USE_TESTNET', 'true').lower() == 'true'
+    # ⭐⭐ إذا كانت المفاتيح موجودة، اجبر على Production ⭐⭐
+    if api_key and api_secret and api_key != 'testnet_api_key':
+        print("🚀 اكتشاف مفاتيح Binance Production - استخدام الوضع الحقيقي")
+        use_testnet = False
     
     if use_testnet:
         print("🔧 وضع التشغيل: Binance Futures Testnet")
-        if not api_key or not api_secret:
-            # مفاتيح Testnet افتراضية (للتجربة فقط)
-            api_key = os.getenv('BINANCE_TESTNET_API_KEY', 'testnet_api_key')
-            api_secret = os.getenv('BINANCE_TESTNET_SECRET', 'testnet_secret')
+        if not api_key or api_key == 'testnet_api_key':
+            api_key = 'testnet_api_key'
+            api_secret = 'testnet_secret'
     else:
         print("🚀 وضع التشغيل: Binance Futures Production")
         if not api_key or not api_secret:
-            print("⚠️  تحذير: لم يتم تعيين مفاتيح Binance API الحقيقية!")
-            print("   أضفها في Render Dashboard → Environment Variables")
-            print("   أو أنشئ ملف .env في المجلد الرئيسي")
+            print("❌ خطأ: لم يتم تعيين مفاتيح Binance API الحقيقية!")
+            print("   أضفها في متغيرات البيئة:")
+            print("   export BINANCE_API_KEY=مفتاحك")
+            print("   export BINANCE_API_SECRET=سرك")
+            return None, "❌ غير مضبوط", True  # العودة إلى Testnet للسلامة
     
     config = {
         'enable_rate_limit': True,
@@ -91,22 +94,10 @@ def get_binance_config():
         },
         'api_key': api_key,
         'api_secret': api_secret,
-        
-        # ⭐⭐ إعدادات Testnet ⭐⭐
         'testnet': use_testnet,
-        'testnet_urls': {
-            'public': 'https://testnet.binancefuture.com/fapi/v1',
-            'private': 'https://testnet.binancefuture.com/fapi/v1',
-        },
-        
-        # ⭐⭐ إعدادات Production ⭐⭐
-        'production_urls': {
-            'public': 'https://fapi.binance.com/fapi/v1',
-            'private': 'https://fapi.binance.com/fapi/v1',
-        }
     }
     
-    return config, keys_status, use_testnet
+    return config, "✅ مضبوط", use_testnet
 
 # إنشاء إعدادات Binance
 BINANCE_CONFIG, API_KEYS_STATUS, USE_TESTNET = get_binance_config()
